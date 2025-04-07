@@ -18,101 +18,89 @@
       height: 100vh;
     }
     #qr-reader {
-      width: 300px;
-      margin-bottom: 20px;
+      width: 100%;
+      max-width: 400px;
     }
-    #result {
-      font-size: 1.2em;
-      margin: 10px 0;
-    }
-    #scan-again-btn {
-      display: none;
-      padding: 10px 20px;
-      font-size: 1em;
-      background: #444;
-      color: white;
-      border: none;
-      border-radius: 5px;
-      cursor: pointer;
-    }
-    #scan-again-btn:hover {
-      background: #666;
+    #qr-reader-results {
+      margin-top: 20px;
+      font-size: 1.2rem;
+      background: #222;
+      padding: 15px 25px;
+      border-radius: 10px;
+      text-align: center;
     }
   </style>
 </head>
 <body>
   <div id="qr-reader"></div>
-  <div id="result">📷 Ready to scan</div>
-  <button id="scan-again-btn" onclick="startScanner()">🔄 Scan Ticket</button>
+  <div id="qr-reader-results">📷 Scan a ticket to begin</div>
 
-  <!-- Sounds -->
-  <audio id="success-sound" src="https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg"></audio>
-  <audio id="error-sound" src="https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg"></audio>
+  <!-- 🔊 Sound effect -->
+  <audio id="beep-sound" src="https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg" preload="auto"></audio>
 
   <script>
-    const resultContainer = document.getElementById("result");
-    const scanAgainBtn = document.getElementById("scan-again-btn");
-    const successSound = document.getElementById("success-sound");
-    const errorSound = document.getElementById("error-sound");
+    function docReady(fn) {
+      if (document.readyState === "complete" || document.readyState === "interactive") {
+        setTimeout(fn, 1);
+      } else {
+        document.addEventListener("DOMContentLoaded", fn);
+      }
+    }
 
-    let html5QrCode;
-    let cameraId;
+    docReady(function () {
+      const resultContainer = document.getElementById('qr-reader-results');
+      const beep = document.getElementById('beep-sound');
+      let lastResult = null;
 
-    // Your Google Apps Script Web App URL 👇
-    const scriptURL = "https://script.google.com/macros/s/AKfycbxJ2KKnAtZIHAGp8x51UddsOYEwGVq9dQgQdcY3dUuR1c9Tyu5C8w0S8aTeqi-MTv2g/exec";
+      function onScanSuccess(decodedText, decodedResult) {
+        if (decodedText !== lastResult) {
+          lastResult = decodedText;
+          beep.play(); // 🔊 Beep sound
+          resultContainer.innerHTML = `✅ Ticket accepted: <strong>${decodedText}</strong>`;
+          console.log(`✅ Scanned: ${decodedText}`, decodedResult);
 
-    function startScanner() {
-      resultContainer.innerText = "📷 Ready to scan";
-      scanAgainBtn.style.display = "none";
+          // Send ticket to Google Sheets
+          fetch("https://script.google.com/macros/s/AKfycbxJ2KKnAtZIHAGp8x51UddsOYEwGVq9dQgQdcY3dUuR1c9Tyu5C8w0S8aTeqi-MTv2g/exec", {
+            method: "POST",
+            body: JSON.stringify({ ticket: decodedText }),
+            headers: { "Content-Type": "application/json" }
+          })
+          .then(res => res.text())
+          .then(response => {
+            console.log("📡 Server says:", response);
+          })
+          .catch(err => {
+            resultContainer.innerText = `❌ Error sending ticket`;
+            console.error("❌ Error:", err);
+          });
 
-      html5QrCode = new Html5Qrcode("qr-reader");
+          // Reset after 2.5 seconds
+          setTimeout(() => {
+            resultContainer.innerHTML = "📷 Ready for next scan";
+            lastResult = null;
+          }, 2500);
+        }
+      }
+
+      const html5QrCode = new Html5Qrcode("qr-reader");
       Html5Qrcode.getCameras().then(devices => {
         if (devices && devices.length) {
-          cameraId = devices[1]?.id || devices[0].id; // prefer back camera
+          const cameraId = devices[0].id;
           html5QrCode.start(
             cameraId,
             { fps: 10, qrbox: { width: 250, height: 250 } },
             onScanSuccess
           );
         } else {
-          resultContainer.innerText = "No camera found 😢";
+          resultContainer.innerText = "No camera found 😞";
         }
       }).catch(err => {
-        resultContainer.innerText = Camera error: ${err};
+        resultContainer.innerText = `Camera error: ${err}`;
+        console.error(err);
       });
-    }
-
-    async function onScanSuccess(decodedText, decodedResult) {
-      await html5QrCode.stop(); // freeze camera
-      resultContainer.innerText = "⏳ Verifying ticket...";
-
-      // Call your Google Apps Script
-      fetch("https://script.google.com/macros/s/AKfycbxJ2KKnAtZIHAGp8x51UddsOYEwGVq9dQgQdcY3dUuR1c9Tyu5C8w0S8aTeqi-MTv2g/exec", {
-        method: "POST",
-        mode: "no-cors",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ ticketId: decodedText }),
-      });
-
-      // Simulate verification logic (you can adjust this)
-      const isValid = decodedText.startsWith("SN-");
-      if (isValid) {
-        resultContainer.innerText = ✅ Ticket Approved: ${decodedText};
-        successSound.play();
-      } else {
-        resultContainer.innerText = ❌ Invalid Ticket: ${decodedText};
-        errorSound.play();
-      }
-
-      scanAgainBtn.style.display = "inline-block";
-    }
-
-    // Start scanner on load
-    window.onload = () => {
-      startScanner();
-    };
+    });
   </script>
 </body>
 </html>
+
+
