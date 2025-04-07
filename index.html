@@ -59,7 +59,7 @@
     let cameraId;
 
     // Your Google Apps Script Web App URL 👇
-    const scriptURL = "https://script.google.com/macros/s/AKfycbz6sQ_X3yvYs5qZCJFxTNKgMBukXZ2b9YbejzQGZ3L2ELQm_d2oVQxp7McmhhoqST0z/exec";
+    const scriptURL = "https://script.google.com/macros/s/AKfycbxtE3kT_BvsUVDpy26my711MgV_IY0gkvci8ejp9yJhOHl2cS2wovPqvWbkhr9NYKut/exec";
 
     function startScanner() {
       resultContainer.innerText = "📷 Ready to scan";
@@ -87,7 +87,7 @@
       resultContainer.innerText = "⏳ Verifying ticket...";
 
       // Call your Google Apps Script
-      fetch("https://script.google.com/macros/s/AKfycbz6sQ_X3yvYs5qZCJFxTNKgMBukXZ2b9YbejzQGZ3L2ELQm_d2oVQxp7McmhhoqST0z/exec", {
+      fetch("https://script.google.com/macros/s/AKfycbxtE3kT_BvsUVDpy26my711MgV_IY0gkvci8ejp9yJhOHl2cS2wovPqvWbkhr9NYKut/exec", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
