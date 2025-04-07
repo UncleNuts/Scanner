@@ -108,10 +108,7 @@
           resultContainer.innerText = `❌ Declined: ${result.message}`;
           declineSound.play();
         }
-      } catch (err) {
-        resultContainer.innerText = "⚠️ Error connecting to sheet.";
-        console.error(err);
-      }
+      } 
 
       scanBtn.style.display = "inline-block";
     }
