@@ -24,6 +24,7 @@
     #result {
       font-size: 1.2em;
       margin: 10px 0;
+      text-align: center;
     }
     #scan-again-btn {
       display: none;
@@ -58,7 +59,6 @@
     let html5QrCode;
     let cameraId;
 
-    // Your Google Apps Script Web App URL 👇
     const scriptURL = "https://script.google.com/macros/s/AKfycbx242UsdWahDtSoEibHOL0wjgaP971TK2QuhJnIKHg65ViShvDmR5Esr8YQf0Ep-Mn3/exec";
 
     function startScanner() {
@@ -68,7 +68,7 @@
       html5QrCode = new Html5Qrcode("qr-reader");
       Html5Qrcode.getCameras().then(devices => {
         if (devices && devices.length) {
-          cameraId = devices[1]?.id || devices[0].id; // prefer back camera
+          cameraId = devices[1]?.id || devices[0].id;
           html5QrCode.start(
             cameraId,
             { fps: 10, qrbox: { width: 250, height: 250 } },
@@ -86,24 +86,30 @@
       await html5QrCode.stop(); // freeze camera
       resultContainer.innerText = "⏳ Verifying ticket...";
 
-      // Call your Google Apps Script
-      fetch("https://script.google.com/macros/s/AKfycbx242UsdWahDtSoEibHOL0wjgaP971TK2QuhJnIKHg65ViShvDmR5Esr8YQf0Ep-Mn3/exec", {
-        method: "POST",
-        mode: "no-cors",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ ticketId: decodedText }),
-      });
+      try {
+        const response = await fetch(scriptURL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ticketId: decodedText }),
+        });
 
-      // Simulate verification logic (you can adjust this)
-      const isValid = decodedText.startsWith("SN-");
-      if (isValid) {
-        resultContainer.innerText = `✅ Ticket Approved: ${decodedText}`;
-        successSound.play();
-      } else {
-        resultContainer.innerText = `❌ Invalid Ticket: ${decodedText}`;
+        const data = await response.json();
+
+        if (data.status === "approved") {
+          resultContainer.innerText = `✅ Ticket Approved: ${decodedText}`;
+          successSound.play();
+        } else if (data.status === "declined") {
+          resultContainer.innerText = `❌ ${data.message}`;
+          errorSound.play();
+        } else {
+          resultContainer.innerText = `⚠️ Error: ${data.message || "Unknown issue"}`;
+          errorSound.play();
+        }
+
+      } catch (err) {
+        resultContainer.innerText = `❌ Network error`;
         errorSound.play();
+        console.error(err);
       }
 
       scanAgainBtn.style.display = "inline-block";
