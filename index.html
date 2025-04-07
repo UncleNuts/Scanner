@@ -4,123 +4,120 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>QR Ticket Scanner</title>
+  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
   <style>
     body {
-      font-family: sans-serif;
+      font-family: Arial, sans-serif;
       text-align: center;
-      padding: 1em;
-      background: #f4f4f4;
+      padding: 2rem;
+      background: #f9f9f9;
     }
-    video {
-      width: 100%;
-      max-width: 400px;
-      margin-bottom: 1em;
-      border-radius: 8px;
-      box-shadow: 0 0 10px rgba(0,0,0,0.2);
+    h1 {
+      font-size: 2rem;
+    }
+    #qr-reader {
+      width: 300px;
+      margin: 1rem auto;
     }
     #result {
-      font-size: 1.2em;
-      margin: 1em 0;
+      margin-top: 1rem;
+      font-size: 1.2rem;
+      font-weight: bold;
     }
-    .success { color: green; font-weight: bold; }
-    .error { color: red; font-weight: bold; }
     button {
       padding: 10px 20px;
-      font-size: 1em;
+      font-size: 1rem;
       border: none;
-      background: #007bff;
+      background-color: #007bff;
       color: white;
       border-radius: 8px;
       cursor: pointer;
+      margin-top: 1rem;
     }
     button:hover {
-      background: #0056b3;
+      background-color: #0056b3;
     }
   </style>
 </head>
 <body>
-
   <h1>🎉 QR Ticket Scanner</h1>
-  <video id="video" autoplay></video>
+  <div id="qr-reader" style="display: none;"></div>
   <div id="result"></div>
-  <button id="scanBtn" style="display: none;">Scan Ticket</button>
+  <button id="scan-btn">Scan Ticket</button>
 
-  <audio id="successSound" src="https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg"></audio>
-  <audio id="errorSound" src="https://actions.google.com/sounds/v1/cartoon/cartoon_boing.ogg"></audio>
+  <!-- Approval and Decline sounds -->
+  <audio id="approve-sound" src="https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg"></audio>
+  <audio id="decline-sound" src="https://actions.google.com/sounds/v1/cartoon/boing.ogg"></audio>
 
-  <script src="https://unpkg.com/@zxing/browser@latest"></script>
   <script>
-    const codeReader = new ZXing.BrowserMultiFormatReader();
-    const video = document.getElementById('video');
-    const resultDiv = document.getElementById('result');
-    const scanBtn = document.getElementById('scanBtn');
-    const successSound = document.getElementById('successSound');
-    const errorSound = document.getElementById('errorSound');
+    const scanBtn = document.getElementById('scan-btn');
+    const resultContainer = document.getElementById('result');
+    const qrReader = document.getElementById('qr-reader');
+    const approveSound = document.getElementById('approve-sound');
+    const declineSound = document.getElementById('decline-sound');
 
-    let selectedDeviceId = null;
-    let stream = null;
+    let html5QrCode;
+    let cameraId;
 
-    // Your Google Apps Script Web App URL:
-    const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxnUmminwmKkxhhyUY1vsJ45rXwzRgW97Z1kPFbaoErB5v9gYphE0iwqWvsp-XIHw1Q/exec';
-
-    async function initScanner() {
-      try {
-        const videoInputDevices = await ZXing.BrowserCodeReader.listVideoInputDevices();
-        const backCamera = videoInputDevices.find(device => device.label.toLowerCase().includes('back')) || videoInputDevices[0];
-        selectedDeviceId = backCamera.deviceId;
-
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { deviceId: selectedDeviceId }
-        });
-        video.srcObject = stream;
-
-        scan();
-      } catch (err) {
-        resultDiv.textContent = 'Error accessing camera: ' + err;
-        resultDiv.className = 'error';
+    // Get camera once on page load
+    window.addEventListener("DOMContentLoaded", async () => {
+      html5QrCode = new Html5Qrcode("qr-reader");
+      const devices = await Html5Qrcode.getCameras();
+      if (devices && devices.length) {
+        cameraId = devices[0].id; // default to first camera (usually back)
+      } else {
+        resultContainer.innerText = "No camera found 😢";
       }
-    }
-
-    function scan() {
-      resultDiv.textContent = '';
-      codeReader.decodeOnceFromVideoDevice(selectedDeviceId, 'video').then(result => {
-        const ticketID = result.text.trim();
-        stopScanner();
-
-        // Send to Google Sheets
-        fetch(WEB_APP_URL + '?ticketID=' + encodeURIComponent(ticketID))
-          .then(res => res.json())
-          .then(data => {
-            if (data.status === 'verified') {
-              resultDiv.innerHTML = '✅ Verified';
-              resultDiv.className = 'success';
-              successSound.play();
-            } else {
-              resultDiv.innerHTML = '❌ Declined';
-              resultDiv.className = 'error';
-              errorSound.play();
-            }
-          })
-          .catch(err => {
-            resultDiv.textContent = '❌ Network error';
-            resultDiv.className = 'error';
-            errorSound.play();
-          });
-
-        scanBtn.style.display = 'inline-block';
-      });
-    }
-
-    function stopScanner() {
-      codeReader.reset();
-    }
-
-    scanBtn.addEventListener('click', () => {
-      scanBtn.style.display = 'none';
-      scan();
     });
 
-    window.addEventListener('load', initScanner);
+    async function startScanner() {
+      resultContainer.innerText = "";
+      scanBtn.style.display = "none";
+      qrReader.style.display = "block";
+
+      if (!cameraId) return;
+
+      await html5QrCode.start(
+        cameraId,
+        { fps: 10, qrbox: { width: 250, height: 250 } },
+        async (decodedText, decodedResult) => {
+          await html5QrCode.stop();
+          qrReader.style.display = "none";
+
+          handleScan(decodedText);
+        }
+      );
+    }
+
+    async function handleScan(ticketId) {
+      resultContainer.innerText = "Checking ticket...";
+
+      try {
+        const response = await fetch("https://script.google.com/macros/s/AKfycbxnUmminwmKkxhhYUY1vsJ45rXwzRgW97Z1kPFbaoErB5v9gYphE0iwqWvsp-fOiRhN/exec", {
+          method: "POST",
+          body: JSON.stringify({ ticketId }),
+          headers: { "Content-Type": "application/json" }
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+          resultContainer.innerText = `✅ Approved: ${result.ticketId}`;
+          approveSound.play();
+        } else {
+          resultContainer.innerText = `❌ Declined: ${result.message}`;
+          declineSound.play();
+        }
+      } catch (err) {
+        resultContainer.innerText = "⚠️ Error connecting to sheet.";
+        console.error(err);
+      }
+
+      scanBtn.style.display = "inline-block";
+    }
+
+    scanBtn.addEventListener("click", startScanner);
   </script>
 </body>
 </html>
+
