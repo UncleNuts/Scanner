@@ -2,117 +2,125 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>QR Ticket Scanner</title>
-  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
   <style>
     body {
-      margin: 0;
-      font-family: Arial, sans-serif;
-      background: #111;
-      color: #fff;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: 100vh;
+      font-family: sans-serif;
+      text-align: center;
+      padding: 1em;
+      background: #f4f4f4;
     }
-    #qr-reader {
-      width: 300px;
-      margin-bottom: 20px;
+    video {
+      width: 100%;
+      max-width: 400px;
+      margin-bottom: 1em;
+      border-radius: 8px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.2);
     }
     #result {
       font-size: 1.2em;
-      margin: 10px 0;
+      margin: 1em 0;
     }
-    #scan-again-btn {
-      display: none;
+    .success { color: green; font-weight: bold; }
+    .error { color: red; font-weight: bold; }
+    button {
       padding: 10px 20px;
       font-size: 1em;
-      background: #444;
-      color: white;
       border: none;
-      border-radius: 5px;
+      background: #007bff;
+      color: white;
+      border-radius: 8px;
       cursor: pointer;
     }
-    #scan-again-btn:hover {
-      background: #666;
+    button:hover {
+      background: #0056b3;
     }
   </style>
 </head>
 <body>
-  <div id="qr-reader"></div>
-  <div id="result">📷 Ready to scan</div>
-  <button id="scan-again-btn" onclick="startScanner()">🔄 Scan Ticket</button>
 
-  <!-- Sounds -->
-  <audio id="success-sound" src="https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg"></audio>
-  <audio id="error-sound" src="https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg"></audio>
+  <h1>🎉 QR Ticket Scanner</h1>
+  <video id="video" autoplay></video>
+  <div id="result"></div>
+  <button id="scanBtn" style="display: none;">Scan Ticket</button>
 
+  <audio id="successSound" src="https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg"></audio>
+  <audio id="errorSound" src="https://actions.google.com/sounds/v1/cartoon/cartoon_boing.ogg"></audio>
+
+  <script src="https://unpkg.com/@zxing/browser@latest"></script>
   <script>
-    const resultContainer = document.getElementById("result");
-    const scanAgainBtn = document.getElementById("scan-again-btn");
-    const successSound = document.getElementById("success-sound");
-    const errorSound = document.getElementById("error-sound");
+    const codeReader = new ZXing.BrowserMultiFormatReader();
+    const video = document.getElementById('video');
+    const resultDiv = document.getElementById('result');
+    const scanBtn = document.getElementById('scanBtn');
+    const successSound = document.getElementById('successSound');
+    const errorSound = document.getElementById('errorSound');
 
-    let html5QrCode;
-    let cameraId;
+    let selectedDeviceId = null;
+    let stream = null;
 
-    // Your Google Apps Script Web App URL 👇
-    const scriptURL = "https://script.google.com/macros/s/AKfycbx242UsdWahDtSoEibHOL0wjgaP971TK2QuhJnIKHg65ViShvDmR5Esr8YQf0Ep-Mn3/exec";
+    // Your Google Apps Script Web App URL:
+    const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxnUmminwmKkxhhyUY1vsJ45rXwzRgW97Z1kPFbaoErB5v9gYphE0iwqWvsp-XIHw1Q/exec';
 
-    function startScanner() {
-      resultContainer.innerText = "📷 Ready to scan";
-      scanAgainBtn.style.display = "none";
+    async function initScanner() {
+      try {
+        const videoInputDevices = await ZXing.BrowserCodeReader.listVideoInputDevices();
+        const backCamera = videoInputDevices.find(device => device.label.toLowerCase().includes('back')) || videoInputDevices[0];
+        selectedDeviceId = backCamera.deviceId;
 
-      html5QrCode = new Html5Qrcode("qr-reader");
-      Html5Qrcode.getCameras().then(devices => {
-        if (devices && devices.length) {
-          cameraId = devices[1]?.id || devices[0].id; // prefer back camera
-          html5QrCode.start(
-            cameraId,
-            { fps: 10, qrbox: { width: 250, height: 250 } },
-            onScanSuccess
-          );
-        } else {
-          resultContainer.innerText = "No camera found 😢";
-        }
-      }).catch(err => {
-        resultContainer.innerText = Camera error: ${err};
-      });
-    }
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { deviceId: selectedDeviceId }
+        });
+        video.srcObject = stream;
 
-    async function onScanSuccess(decodedText, decodedResult) {
-      await html5QrCode.stop(); // freeze camera
-      resultContainer.innerText = "⏳ Verifying ticket...";
-
-      // Call your Google Apps Script
-      fetch("https://script.google.com/macros/s/AKfycbx242UsdWahDtSoEibHOL0wjgaP971TK2QuhJnIKHg65ViShvDmR5Esr8YQf0Ep-Mn3/exec", {
-        method: "POST",
-        mode: "no-cors",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ ticketId: decodedText }),
-      });
-
-      // Simulate verification logic (you can adjust this)
-      const isValid = decodedText.startsWith("SN-");
-      if (isValid) {
-        resultContainer.innerText = ✅ Ticket Approved: ${decodedText};
-        successSound.play();
-      } else {
-        resultContainer.innerText = ❌ Invalid Ticket: ${decodedText};
-        errorSound.play();
+        scan();
+      } catch (err) {
+        resultDiv.textContent = 'Error accessing camera: ' + err;
+        resultDiv.className = 'error';
       }
-
-      scanAgainBtn.style.display = "inline-block";
     }
 
-    // Start scanner on load
-    window.onload = () => {
-      startScanner();
-    };
+    function scan() {
+      resultDiv.textContent = '';
+      codeReader.decodeOnceFromVideoDevice(selectedDeviceId, 'video').then(result => {
+        const ticketID = result.text.trim();
+        stopScanner();
+
+        // Send to Google Sheets
+        fetch(WEB_APP_URL + '?ticketID=' + encodeURIComponent(ticketID))
+          .then(res => res.json())
+          .then(data => {
+            if (data.status === 'verified') {
+              resultDiv.innerHTML = '✅ Verified';
+              resultDiv.className = 'success';
+              successSound.play();
+            } else {
+              resultDiv.innerHTML = '❌ Declined';
+              resultDiv.className = 'error';
+              errorSound.play();
+            }
+          })
+          .catch(err => {
+            resultDiv.textContent = '❌ Network error';
+            resultDiv.className = 'error';
+            errorSound.play();
+          });
+
+        scanBtn.style.display = 'inline-block';
+      });
+    }
+
+    function stopScanner() {
+      codeReader.reset();
+    }
+
+    scanBtn.addEventListener('click', () => {
+      scanBtn.style.display = 'none';
+      scan();
+    });
+
+    window.addEventListener('load', initScanner);
   </script>
 </body>
 </html>
