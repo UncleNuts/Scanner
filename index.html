@@ -3,11 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Event Scanning</title>
-  <script src="https://unpkg.com/html5-qrcode@2.3.8/dist/html5-qrcode.min.js"></script>
+  <title>Event Scanner</title>
   <style>
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-family: Arial, sans-serif;
       margin: 0;
       padding: 0;
       background: #121212;
@@ -17,27 +16,22 @@
       display: flex;
       flex-direction: column;
     }
-    
     #header {
       padding: 20px;
       background: #1a1a1a;
     }
-    
     #scanner-container {
       flex: 1;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      position: relative;
     }
-    
     #qr-reader {
       width: 90%;
       max-width: 400px;
       margin: 0 auto;
     }
-    
     #result-overlay {
       position: fixed;
       top: 0;
@@ -52,35 +46,15 @@
       z-index: 100;
       font-size: 24px;
     }
-    
     .status-icon {
       font-size: 80px;
       margin-bottom: 20px;
     }
-    
-    .approved {
-      color: #4CAF50;
-    }
-    
-    .declined {
-      color: #F44336;
-    }
-    
-    .not-found {
-      color: #FF9800;
-    }
-    
-    #loading {
-      display: none;
-      margin: 20px;
-    }
-    
-    #error-message {
-      color: #F44336;
-      margin: 20px;
-      display: none;
-    }
-    
+    .approved { color: #4CAF50; }
+    .declined { color: #F44336; }
+    .not-found { color: #FF9800; }
+    #loading { margin: 20px; }
+    #error-message { color: #F44336; margin: 20px; display: none; }
     #retry-button {
       background: #6200EE;
       color: white;
@@ -93,24 +67,18 @@
       box-shadow: 0 4px 6px rgba(0,0,0,0.1);
       display: none;
     }
-    
-    #retry-button:active {
-      transform: scale(0.98);
-    }
   </style>
 </head>
 <body>
   <div id="header">
-    <h1>Event Scanning</h1>
+    <h1>Event Scanner</h1>
   </div>
-  
   <div id="scanner-container">
     <div id="qr-reader"></div>
-    <div id="loading">Initializing camera...</div>
+    <div id="loading">Loading scanner...</div>
     <div id="error-message"></div>
-    <button id="retry-button">Retry</button>
+    <button id="retry-button">Retry Camera</button>
   </div>
-  
   <div id="result-overlay">
     <div id="status-icon" class="status-icon"></div>
     <div id="status-message"></div>
@@ -127,8 +95,7 @@
     
     let html5QrCode;
     let isScanning = false;
-    
-    // Initialize scanner automatically
+
     async function initScanner() {
       loadingElement.style.display = 'block';
       errorElement.style.display = 'none';
@@ -136,11 +103,15 @@
       qrReaderElement.style.display = 'none';
       
       try {
-        html5QrCode = new Html5Qrcode("qr-reader");
-        const cameras = await Html5Qrcode.getCameras();
+        if (!window.Html5Qrcode) {
+          throw new Error("Scanner library failed to load. Check internet connection.");
+        }
+        
+        html5QrCode = new window.Html5Qrcode("qr-reader");
+        const cameras = await html5QrCode.getCameras();
         
         if (cameras.length === 0) {
-          throw new Error("No cameras found");
+          throw new Error("No camera found.");
         }
         
         loadingElement.style.display = 'none';
@@ -148,16 +119,10 @@
         isScanning = true;
         
         await html5QrCode.start(
-          cameras[0].id,  // Use first camera
-          {
-            fps: 10,
-            qrbox: { width: 250, height: 250 }
-          },
+          cameras[0].id,
+          { fps: 10, qrbox: 250 },
           async (decodedText) => {
             await handleScan(decodedText);
-          },
-          (errorMessage) => {
-            // Optional verbose logging
           }
         );
       } catch (err) {
@@ -166,65 +131,68 @@
         errorElement.style.display = 'block';
         errorElement.textContent = err.message;
         retryButton.style.display = 'block';
-        qrReaderElement.style.display = 'none';
       }
     }
-    
-    // Retry button handler
-    retryButton.addEventListener('click', initScanner);
-    
-    // Start scanner on page load
-    document.addEventListener('DOMContentLoaded', initScanner);
-    
+
     async function handleScan(ticketId) {
-      // Freeze scanner
       isScanning = false;
       await html5QrCode.stop();
       qrReaderElement.style.display = 'none';
       
-      // Show loading state
       showResult("⌛", "Processing...", "white");
       
-      try {
-        // Simulate network delay (remove in production)
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // Replace with your actual API call
-        const response = await fetch("https://script.google.com/macros/s/AKfycbxr6HzIO5guIs0L28OH4dt6a8c04cQ5EI7S9YYdtDdcEJigc5Ep4TlXJ1d-eFoROeiT/exec", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ticketId })
-        });
-        
-        const result = await response.json();
-        
-        if (result.success) {
-          showResult("✓", `Approved: ${ticketId}`, "approved");
-        } else if (result.message === "Already used") {
-          showResult("✗", `Declined: Already used`, "declined");
-        } else if (result.message === "Ticket not found") {
-          showResult("?", `Not found: ${ticketId}`, "not-found");
-        } else {
-          showResult("⚠", "Error: Invalid response", "declined");
+      setTimeout(async () => {
+        try {
+          const response = await fetch(
+            "https://script.google.com/macros/s/AKfycbxr6HzIO5guIs0L28OH4dt6a8c04cQ5EI7S9YYdtDdcEJigc5Ep4TlXJ1d-eFoROeiT/exec",
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ ticketId: ticketId })
+            }
+          );
+          const result = await response.json();
+
+          if (result.success) {
+            showResult("✅", `Approved: ${ticketId}`, "approved");
+          } else if (result.message === "Already used") {
+            showResult("❌", "Declined: Already used", "declined");
+          } else if (result.message === "Ticket not found") {
+            showResult("⚠️", "Invalid: Ticket not found", "not-found");
+          } else {
+            showResult("❌", `Declined: ${result.message || "Invalid ticket"}`, "declined");
+          }
+        } catch (err) {
+          showResult("⚠️", "Error: Could not verify", "declined");
         }
-      } catch (err) {
-        console.error(err);
-        showResult("⚠", "Network Error", "declined");
-      }
-      
-      // Auto-resume scanning after delay
-      setTimeout(() => {
-        resultOverlay.style.display = 'none';
-        initScanner(); // Restart scanner automatically
-      }, 2000);
+        
+        setTimeout(() => {
+          resultOverlay.style.display = 'none';
+          initScanner();
+        }, 2000);
+      }, 500);
     }
-    
+
     function showResult(icon, message, className) {
       statusIcon.textContent = icon;
       statusMessage.textContent = message;
       statusIcon.className = `status-icon ${className}`;
       resultOverlay.style.display = 'flex';
     }
+
+    retryButton.addEventListener('click', initScanner);
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const script = document.createElement('script');
+      script.src = "https://unpkg.com/html5-qrcode@2.3.8/dist/html5-qrcode.min.js";
+      script.onload = initScanner;
+      script.onerror = () => {
+        errorElement.textContent = "Failed to load scanner. Check internet connection.";
+        errorElement.style.display = 'block';
+        retryButton.style.display = 'block';
+      };
+      document.head.appendChild(script);
+    });
   </script>
 </body>
 </html>
