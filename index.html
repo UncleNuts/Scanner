@@ -26,11 +26,13 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
+      position: relative;
     }
     #qr-reader {
       width: 90%;
       max-width: 400px;
       margin: 0 auto;
+      display: none;
     }
     #result-overlay {
       position: fixed;
@@ -70,6 +72,11 @@
       margin: 20px;
       cursor: pointer;
       box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    #camera-feed {
+      width: 100%;
+      max-width: 400px;
+      background: black;
       display: none;
     }
   </style>
@@ -79,8 +86,9 @@
     <h1>Event Scanner</h1>
   </div>
   <div id="scanner-container">
+    <video id="camera-feed" playsinline></video>
     <div id="qr-reader"></div>
-    <div id="loading">Loading scanner...</div>
+    <div id="loading">Initializing camera...</div>
     <div id="error-message"></div>
     <button id="retry-button">Retry Camera</button>
   </div>
@@ -90,103 +98,155 @@
   </div>
 
   <script>
-    // ===== MAIN SCANNER CODE =====
-    const initScanner = async () => {
-      const qrReader = document.getElementById('qr-reader');
-      const loading = document.getElementById('loading');
-      const errorMsg = document.getElementById('error-message');
-      const retryBtn = document.getElementById('retry-button');
-      
-      // Show loading state
-      loading.style.display = 'block';
-      errorMsg.style.display = 'none';
-      retryBtn.style.display = 'none';
-      qrReader.style.display = 'none';
-      
-      try {
-        // 1. Dynamically load the scanner library
-        if (!window.Html5Qrcode) {
-          await new Promise((resolve, reject) => {
-            const script = document.createElement('script');
-            script.src = "https://unpkg.com/html5-qrcode@2.3.8/dist/html5-qrcode.min.js";
-            script.onload = resolve;
-            script.onerror = reject;
-            document.head.appendChild(script);
-          });
-        }
-        
-        // 2. Initialize scanner
-        const html5QrCode = new Html5Qrcode("qr-reader");
-        const cameras = await html5QrCode.getCameras();
-        
-        if (cameras.length === 0) {
-          throw new Error("Could not access camera. Please check permissions.");
-        }
-        
-        // 3. Start scanning
-        loading.style.display = 'none';
-        qrReader.style.display = 'block';
-        
-        await html5QrCode.start(
-          cameras[0].id,
-          { fps: 10, qrbox: 250 },
-          async (ticketId) => {
-            // Stop scanner temporarily
-            await html5QrCode.stop();
-            qrReader.style.display = 'none';
-            
-            // Show processing message
-            document.getElementById('status-icon').textContent = "⌛";
-            document.getElementById('status-message').textContent = "Processing...";
-            document.getElementById('result-overlay').style.display = 'flex';
-            
-            // Verify ticket (500ms delay for UX)
-            setTimeout(async () => {
-              try {
-                const response = await fetch(
-                  "https://script.google.com/macros/s/AKfycbxr6HzIO5guIs0L28OH4dt6a8c04cQ5EI7S9YYdtDdcEJigc5Ep4TlXJ1d-eFoROeiT/exec", 
-                  {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ ticketId })
-                  }
-                );
-                const result = await response.json();
-                
-                const statusIcon = document.getElementById('status-icon');
-                const statusMsg = document.getElementById('status-message');
-                
-                if (result.success) {
-                  statusIcon.textContent = "✅";
-                  statusIcon.className = "status-icon approved";
-                  statusMsg.textContent = `Approved: ${ticketId}`;
-                } else {
-                  statusIcon.textContent = "❌";
-                  statusIcon.className = "status-icon declined";
-                  statusMsg.textContent = result.message || "Ticket invalid";
-                }
-              } catch (error) {
-                document.getElementById('status-icon').textContent = "⚠️";
-                document.getElementById('status-message').textContent = "Network error";
-              }
-              
-              // Resume scanning after 2 seconds
-              setTimeout(initScanner, 2000);
-            }, 500);
-          }
-        );
-      } catch (error) {
-        console.error("Scanner error:", error);
-        loading.style.display = 'none';
-        errorMsg.style.display = 'block';
-        errorMsg.textContent = error.message;
-        retryBtn.style.display = 'block';
-      }
+    // ===== SCANNER CONFIGURATION =====
+    const config = {
+      scannerCDN: "https://unpkg.com/html5-qrcode@2.3.8/dist/html5-qrcode.min.js",
+      apiEndpoint: "https://script.google.com/macros/s/AKfycbxr6HzIO5guIs0L28OH4dt6a8c04cQ5EI7S9YYdtDdcEJigc5Ep4TlXJ1d-eFoROeiT/exec",
+      cameraFacingMode: "environment" // "user" for front camera
     };
 
-    // Initialize when page loads
+    // ===== SCANNER STATE =====
+    let scanner = {
+      html5QrCode: null,
+      isScanning: false,
+      currentCamera: null
+    };
+
+    // ===== DOM ELEMENTS =====
+    const elements = {
+      qrReader: document.getElementById('qr-reader'),
+      loading: document.getElementById('loading'),
+      errorMsg: document.getElementById('error-message'),
+      retryBtn: document.getElementById('retry-button'),
+      resultOverlay: document.getElementById('result-overlay'),
+      statusIcon: document.getElementById('status-icon'),
+      statusMsg: document.getElementById('status-message'),
+      cameraFeed: document.getElementById('camera-feed')
+    };
+
+    // ===== MAIN FUNCTIONS =====
+    async function initScanner() {
+      // Reset UI
+      elements.loading.style.display = 'block';
+      elements.errorMsg.style.display = 'none';
+      elements.retryBtn.style.display = 'none';
+      elements.qrReader.style.display = 'none';
+      elements.cameraFeed.style.display = 'none';
+      
+      try {
+        // 1. Load scanner library if needed
+        if (!window.Html5Qrcode) {
+          await loadScript(config.scannerCDN);
+        }
+
+        // 2. Initialize scanner
+        scanner.html5QrCode = new Html5Qrcode("qr-reader");
+        
+        // 3. Get camera list
+        const cameras = await scanner.html5QrCode.getCameras();
+        if (cameras.length === 0) {
+          throw new Error("No cameras found. Please check permissions.");
+        }
+
+        // 4. Find preferred camera (back camera)
+        const preferredCamera = cameras.find(cam => 
+          cam.label.toLowerCase().includes("back") || 
+          cam.label.toLowerCase().includes("rear")
+        ) || cameras[0];
+
+        // 5. Start camera preview
+        elements.cameraFeed.style.display = 'block';
+        await scanner.html5QrCode.start(
+          preferredCamera.id,
+          {
+            fps: 10,
+            qrbox: 250,
+            videoConstraints: {
+              facingMode: config.cameraFacingMode
+            }
+          },
+          onScanSuccess,
+          onScanError
+        );
+        
+        // 6. Update UI
+        elements.loading.style.display = 'none';
+        scanner.isScanning = true;
+        
+      } catch (error) {
+        handleError(error);
+      }
+    }
+
+    async function onScanSuccess(ticketId) {
+      scanner.isScanning = false;
+      await scanner.html5QrCode.stop();
+      elements.qrReader.style.display = 'none';
+      elements.cameraFeed.style.display = 'none';
+      
+      showResult("⌛", "Processing...", "white");
+      
+      try {
+        // Verify ticket
+        const response = await fetch(config.apiEndpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ticketId })
+        });
+        const result = await response.json();
+
+        if (result.success) {
+          showResult("✅", `Approved: ${ticketId}`, "approved");
+        } else {
+          showResult("❌", result.message || "Ticket invalid", "declined");
+        }
+      } catch (error) {
+        showResult("⚠️", "Verification failed", "declined");
+      }
+      
+      // Restart scanner after delay
+      setTimeout(initScanner, 2000);
+    }
+
+    function onScanError(error) {
+      console.debug("Scan error:", error);
+    }
+
+    function handleError(error) {
+      console.error("Scanner error:", error);
+      elements.loading.style.display = 'none';
+      elements.errorMsg.style.display = 'block';
+      elements.errorMsg.textContent = error.message;
+      elements.retryBtn.style.display = 'block';
+      elements.cameraFeed.style.display = 'none';
+    }
+
+    function showResult(icon, message, className) {
+      elements.statusIcon.textContent = icon;
+      elements.statusMsg.textContent = message;
+      elements.statusIcon.className = `status-icon ${className}`;
+      elements.resultOverlay.style.display = 'flex';
+    }
+
+    async function loadScript(src) {
+      return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = src;
+        script.onload = resolve;
+        script.onerror = () => reject(new Error(`Failed to load script: ${src}`));
+        document.head.appendChild(script);
+      });
+    }
+
+    // ===== INITIALIZATION =====
     document.addEventListener('DOMContentLoaded', () => {
-      document.getElementById('retry-button').addEventListener('click', initScanner);
+      elements.retryBtn.addEventListener('click', () => {
+        if (scanner.html5QrCode && scanner.isScanning) {
+          scanner.html5QrCode.stop();
+        }
+        initScanner();
+      });
+      
       initScanner();
     });
   </script>
