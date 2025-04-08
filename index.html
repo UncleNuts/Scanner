@@ -12,9 +12,6 @@
       padding: 2rem;
       background: #f9f9f9;
     }
-    h1 {
-      font-size: 2rem;
-    }
     #qr-reader {
       width: 300px;
       margin: 1rem auto;
@@ -45,7 +42,6 @@
   <div id="result"></div>
   <button id="scan-btn">Scan Ticket</button>
 
-  <!-- Approval and Decline sounds -->
   <audio id="approve-sound" src="https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg"></audio>
   <audio id="decline-sound" src="https://actions.google.com/sounds/v1/cartoon/boing.ogg"></audio>
 
@@ -59,12 +55,11 @@
     let html5QrCode;
     let cameraId;
 
-    // Get camera once on page load
     window.addEventListener("DOMContentLoaded", async () => {
       html5QrCode = new Html5Qrcode("qr-reader");
       const devices = await Html5Qrcode.getCameras();
-      if (devices && devices.length) {
-        cameraId = devices[0].id; // Back camera
+      if (devices.length) {
+        cameraId = devices[0].id;
       } else {
         resultContainer.innerText = "No camera found 😢";
       }
@@ -80,7 +75,7 @@
       await html5QrCode.start(
         cameraId,
         { fps: 10, qrbox: { width: 250, height: 250 } },
-        async (decodedText, decodedResult) => {
+        async (decodedText) => {
           await html5QrCode.stop();
           qrReader.style.display = "none";
           handleScan(decodedText);
@@ -100,16 +95,16 @@
 
         const result = await response.json();
 
-        if (result.status === "approved") {
-          resultContainer.innerText = `✅ Approved! Ticket scanned at: ${new Date(result.scannedAt).toLocaleString()}`;
+        if (result.success) {
+          resultContainer.innerText = `✅ Approved: ${result.ticketId}`;
           approveSound.play();
         } else {
-          resultContainer.innerText = `❌ Declined: ${result.reason}`;
+          resultContainer.innerText = `❌ Declined: ${result.message}`;
           declineSound.play();
         }
-      } catch (err) {
+      } catch (error) {
         resultContainer.innerText = "⚠️ Error connecting to sheet.";
-        console.error(err);
+        console.error(error);
       }
 
       scanBtn.style.display = "inline-block";
