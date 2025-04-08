@@ -85,6 +85,32 @@
   </div>
 
   <script>
+    // ===== MULTI-CDN FALLBACK SYSTEM =====
+    const loadScannerLibrary = () => {
+      return new Promise((resolve) => {
+        // Try primary CDN first
+        const tryPrimaryCDN = () => {
+          const script = document.createElement('script');
+          script.src = "https://unpkg.com/html5-qrcode@2.3.8/dist/html5-qrcode.min.js";
+          script.onload = () => resolve(true);
+          script.onerror = trySecondaryCDN;
+          document.head.appendChild(script);
+        };
+
+        // Try secondary CDN if primary fails
+        const trySecondaryCDN = () => {
+          const script = document.createElement('script');
+          script.src = "https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/dist/html5-qrcode.min.js";
+          script.onload = () => resolve(true);
+          script.onerror = () => resolve(false);
+          document.head.appendChild(script);
+        };
+
+        tryPrimaryCDN();
+      });
+    };
+
+    // ===== MAIN SCANNER CODE =====
     const qrReaderElement = document.getElementById('qr-reader');
     const resultOverlay = document.getElementById('result-overlay');
     const statusIcon = document.getElementById('status-icon');
@@ -103,15 +129,22 @@
       qrReaderElement.style.display = 'none';
       
       try {
+        // Wait for library to load
+        const libraryLoaded = await loadScannerLibrary();
+        
+        if (!libraryLoaded) {
+          throw new Error("Scanner library failed to load. Try again or check connection.");
+        }
+        
         if (!window.Html5Qrcode) {
-          throw new Error("Scanner library failed to load. Check internet connection.");
+          throw new Error("Scanner initialization failed.");
         }
         
         html5QrCode = new window.Html5Qrcode("qr-reader");
         const cameras = await html5QrCode.getCameras();
         
         if (cameras.length === 0) {
-          throw new Error("No camera found.");
+          throw new Error("No camera found. Please check permissions.");
         }
         
         loadingElement.style.display = 'none';
@@ -123,6 +156,9 @@
           { fps: 10, qrbox: 250 },
           async (decodedText) => {
             await handleScan(decodedText);
+          },
+          (error) => {
+            console.log("QR Code scan error", error);
           }
         );
       } catch (err) {
@@ -182,17 +218,8 @@
 
     retryButton.addEventListener('click', initScanner);
 
-    document.addEventListener('DOMContentLoaded', () => {
-      const script = document.createElement('script');
-      script.src = "https://unpkg.com/html5-qrcode@2.3.8/dist/html5-qrcode.min.js";
-      script.onload = initScanner;
-      script.onerror = () => {
-        errorElement.textContent = "Failed to load scanner. Check internet connection.";
-        errorElement.style.display = 'block';
-        retryButton.style.display = 'block';
-      };
-      document.head.appendChild(script);
-    });
+    // Start when page loads
+    document.addEventListener('DOMContentLoaded', initScanner);
   </script>
 </body>
 </html>
