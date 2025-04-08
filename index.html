@@ -93,7 +93,7 @@
 
     async function sendToSheet(ticketId) {
       try {
-        const res = await fetch(shttps://script.google.com/macros/s/AKfycbxJQsoPrcbeRyOSQG6Yf3fuV-V-nFGMF4z3ydUvIOlWgDj3PIzJcg77KSx1w11P-R27/exec, {
+        const res = await fetch("https://script.google.com/macros/s/AKfycbxJQsoPrcbeRyOSQG6Yf3fuV-V-nFGMF4z3ydUvIOlWgDj3PIzJcg77KSx1w11P-R27/exec", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ ticketId })
