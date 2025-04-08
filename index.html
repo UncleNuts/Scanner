@@ -45,6 +45,7 @@
   <div id="result"></div>
   <button id="scan-btn">Scan Ticket</button>
 
+  <!-- Approval and Decline sounds -->
   <audio id="approve-sound" src="https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg"></audio>
   <audio id="decline-sound" src="https://actions.google.com/sounds/v1/cartoon/boing.ogg"></audio>
 
@@ -58,14 +59,12 @@
     let html5QrCode;
     let cameraId;
 
-    // Ask permission and get camera only once on page load
+    // Get camera once on page load
     window.addEventListener("DOMContentLoaded", async () => {
       html5QrCode = new Html5Qrcode("qr-reader");
       const devices = await Html5Qrcode.getCameras();
-      if (devices && devices.length > 0) {
-        // Try to pick back camera if available
-        const backCam = devices.find(d => d.label.toLowerCase().includes("back"));
-        cameraId = backCam ? backCam.id : devices[0].id;
+      if (devices && devices.length) {
+        cameraId = devices[0].id; // Back camera
       } else {
         resultContainer.innerText = "No camera found 😢";
       }
@@ -81,7 +80,7 @@
       await html5QrCode.start(
         cameraId,
         { fps: 10, qrbox: { width: 250, height: 250 } },
-        async (decodedText) => {
+        async (decodedText, decodedResult) => {
           await html5QrCode.stop();
           qrReader.style.display = "none";
           handleScan(decodedText);
@@ -95,16 +94,14 @@
       try {
         const response = await fetch("https://script.google.com/macros/s/AKfycbxr6HzIO5guIs0L28OH4dt6a8c04cQ5EI7S9YYdtDdcEJigc5Ep4TlXJ1d-eFoROeiT/exec", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ ticketId })
         });
 
         const result = await response.json();
 
         if (result.status === "approved") {
-          resultContainer.innerText = `✅ Approved: ${ticketId}`;
+          resultContainer.innerText = `✅ Approved! Ticket scanned at: ${new Date(result.scannedAt).toLocaleString()}`;
           approveSound.play();
         } else {
           resultContainer.innerText = `❌ Declined: ${result.reason}`;
