@@ -1,122 +1,215 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>QR Ticket Scanner</title>
-  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Event Scanning</title>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/dist/html5-qrcode.min.js"></script>
   <style>
     body {
-      font-family: Arial, sans-serif;
-      text-align: center;
-      padding: 2rem;
-      background: #2A2A2A;
-    }
-    h1 {
-      font-size: 2rem;
-    }
-    #qr-reader {
-      width: 300px;
-      margin: 1rem auto;
-    }
-    #result {
-      margin-top: 1rem;
-      font-size: 1.2rem;
-      font-weight: bold;
-    }
-    button {
-      padding: 10px 20px;
-      font-size: 1rem;
-      border: none;
-      background-color: #007bff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #121212;
       color: white;
-      border-radius: 8px;
-      cursor: pointer;
-      margin-top: 1rem;
+      text-align: center;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
     }
-    button:hover {
-      background-color: #0056b3;
+    
+    #header {
+      padding: 20px;
+      background: #1a1a1a;
+    }
+    
+    #scanner-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+    
+    #qr-reader {
+      width: 90%;
+      max-width: 400px;
+      margin: 0 auto;
+    }
+    
+    #result-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.9);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      z-index: 100;
+      font-size: 24px;
+    }
+    
+    .status-icon {
+      font-size: 80px;
+      margin-bottom: 20px;
+    }
+    
+    .approved {
+      color: #4CAF50;
+    }
+    
+    .declined {
+      color: #F44336;
+    }
+    
+    .not-found {
+      color: #FF9800;
+    }
+    
+    #start-button {
+      background: #6200EE;
+      color: white;
+      border: none;
+      padding: 15px 30px;
+      font-size: 18px;
+      border-radius: 50px;
+      margin: 20px;
+      cursor: pointer;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    
+    #start-button:active {
+      transform: scale(0.98);
     }
   </style>
 </head>
 <body>
-  <h1> QR Ticket Scanner </h1>
-  <div id="qr-reader" style="display: none;"></div>
-  <div id="result"></div>
-  <button id="scan-btn">Scan Ticket</button>
-
-  <!-- Approval and Decline sounds -->
-  <audio id="approve-sound" src="https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg"></audio>
-  <audio id="decline-sound" src="https://actions.google.com/sounds/v1/cartoon/boing.ogg"></audio>
+  <div id="header">
+    <h1>Event Scanning</h1>
+  </div>
+  
+  <div id="scanner-container">
+    <div id="qr-reader" style="display:none"></div>
+    <button id="start-button">Start Scanning</button>
+  </div>
+  
+  <div id="result-overlay">
+    <div id="status-icon" class="status-icon"></div>
+    <div id="status-message"></div>
+  </div>
 
   <script>
-    const scanBtn = document.getElementById('scan-btn');
-    const resultContainer = document.getElementById('result');
-    const qrReader = document.getElementById('qr-reader');
-    const approveSound = document.getElementById('approve-sound');
-    const declineSound = document.getElementById('decline-sound');
-
+    const startButton = document.getElementById('start-button');
+    const qrReaderElement = document.getElementById('qr-reader');
+    const resultOverlay = document.getElementById('result-overlay');
+    const statusIcon = document.getElementById('status-icon');
+    const statusMessage = document.getElementById('status-message');
+    
     let html5QrCode;
-    let cameraId;
-
-    // Get camera once on page load
-    window.addEventListener("DOMContentLoaded", async () => {
-      html5QrCode = new Html5Qrcode("qr-reader");
-      const devices = await Html5Qrcode.getCameras();
-      if (devices && devices.length) {
-        cameraId = devices[1].id; // default to first camera (usually back)
-      } else {
-        resultContainer.innerText = "No camera found 😢";
-      }
-    });
-
-    async function startScanner() {
-      resultContainer.innerText = "";
-      scanBtn.style.display = "none";
-      qrReader.style.display = "block";
-
-      if (!cameraId) return;
-
-      await html5QrCode.start(
-        cameraId,
-        { fps: 10, qrbox: { width: 250, height: 250 } },
-        async (decodedText, decodedResult) => {
-          await html5QrCode.stop();
-          qrReader.style.display = "none";
-
-          handleScan(decodedText);
-        }
-      );
-    }
-
-    async function handleScan(ticketId) {
-      resultContainer.innerText = "Checking ticket...";
-
+    let isScanning = false;
+    
+    // Initialize on page load
+    document.addEventListener('DOMContentLoaded', async () => {
       try {
-        const response = await fetch("https://script.google.com/macros/s/AKfycbxr6HzIO5guIs0L28OH4dt6a8c04cQ5EI7S9YYdtDdcEJigc5Ep4TlXJ1d-eFoROeiT/exec", {
-          method: "POST",
-          body: JSON.stringify({ ticketId }),
-          headers: { "Content-Type": "application/json" }
-        });
-
-        const result = await response.json();
-
-        if (result.success) {
-          resultContainer.innerText = ✅ Approved: ${result.ticketId};
-          approveSound.play();
-        } else {
-          resultContainer.innerText = ❌ Declined: ${result.message};
-          declineSound.play();
-        }
+        html5QrCode = new Html5Qrcode("qr-reader");
+        startButton.style.display = 'block';
       } catch (err) {
-        resultContainer.innerText = "⚠️ Error connecting to sheet.";
+        alert("Camera access error. Please enable camera permissions.");
         console.error(err);
       }
-
-      scanBtn.style.display = "inline-block";
+    });
+    
+    // Start scanning button
+    startButton.addEventListener('click', async () => {
+      if (isScanning) return;
+      
+      try {
+        const cameras = await Html5Qrcode.getCameras();
+        if (cameras.length === 0) {
+          alert("No cameras found");
+          return;
+        }
+        
+        startButton.style.display = 'none';
+        qrReaderElement.style.display = 'block';
+        isScanning = true;
+        
+        await html5QrCode.start(
+          cameras[0].id,  // Use first camera (usually back)
+          {
+            fps: 10,
+            qrbox: { width: 250, height: 250 }
+          },
+          async (decodedText) => {
+            await handleScan(decodedText);
+          },
+          () => {} // Verbose logging (optional)
+        );
+      } catch (err) {
+        console.error(err);
+        resetScanner();
+        alert("Failed to start scanner");
+      }
+    });
+    
+    async function handleScan(ticketId) {
+      // Freeze scanner
+      isScanning = false;
+      await html5QrCode.stop();
+      qrReaderElement.style.display = 'none';
+      
+      // Show loading state
+      showResult("⌛", "Processing...", "white");
+      
+      try {
+        // Simulate network delay (remove in production)
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Replace with your actual API call
+        const response = await fetch("https://script.google.com/macros/s/AKfycbxr6HzIO5guIs0L28OH4dt6a8c04cQ5EI7S9YYdtDdcEJigc5Ep4TlXJ1d-eFoROeiT/exec", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ticketId })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          showResult("✓", `Approved: ${ticketId}`, "approved");
+        } else if (result.message === "Already used") {
+          showResult("✗", `Declined: Already used`, "declined");
+        } else if (result.message === "Ticket not found") {
+          showResult("?", `Not found: ${ticketId}`, "not-found");
+        } else {
+          showResult("⚠", "Error: Invalid response", "declined");
+        }
+      } catch (err) {
+        console.error(err);
+        showResult("⚠", "Network Error", "declined");
+      }
+      
+      // Auto-close after delay
+      setTimeout(() => {
+        resultOverlay.style.display = 'none';
+        resetScanner();
+      }, 2000);
     }
-
-    scanBtn.addEventListener("click", startScanner);
+    
+    function showResult(icon, message, className) {
+      statusIcon.textContent = icon;
+      statusMessage.textContent = message;
+      statusIcon.className = `status-icon ${className}`;
+      resultOverlay.style.display = 'flex';
+    }
+    
+    function resetScanner() {
+      startButton.style.display = 'block';
+      isScanning = false;
+    }
   </script>
 </body>
-</html> 
+</html>
