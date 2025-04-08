@@ -70,7 +70,18 @@
       color: #FF9800;
     }
     
-    #start-button {
+    #loading {
+      display: none;
+      margin: 20px;
+    }
+    
+    #error-message {
+      color: #F44336;
+      margin: 20px;
+      display: none;
+    }
+    
+    #retry-button {
       background: #6200EE;
       color: white;
       border: none;
@@ -80,9 +91,10 @@
       margin: 20px;
       cursor: pointer;
       box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      display: none;
     }
     
-    #start-button:active {
+    #retry-button:active {
       transform: scale(0.98);
     }
   </style>
@@ -93,8 +105,10 @@
   </div>
   
   <div id="scanner-container">
-    <div id="qr-reader" style="display:none"></div>
-    <button id="start-button">Start Scanning</button>
+    <div id="qr-reader"></div>
+    <div id="loading">Initializing camera...</div>
+    <div id="error-message"></div>
+    <button id="retry-button">Retry</button>
   </div>
   
   <div id="result-overlay">
@@ -103,43 +117,38 @@
   </div>
 
   <script>
-    const startButton = document.getElementById('start-button');
     const qrReaderElement = document.getElementById('qr-reader');
     const resultOverlay = document.getElementById('result-overlay');
     const statusIcon = document.getElementById('status-icon');
     const statusMessage = document.getElementById('status-message');
+    const loadingElement = document.getElementById('loading');
+    const errorElement = document.getElementById('error-message');
+    const retryButton = document.getElementById('retry-button');
     
     let html5QrCode;
     let isScanning = false;
     
-    // Initialize on page load
-    document.addEventListener('DOMContentLoaded', async () => {
-      try {
-        html5QrCode = new Html5Qrcode("qr-reader");
-        startButton.style.display = 'block';
-      } catch (err) {
-        alert("Camera access error. Please enable camera permissions.");
-        console.error(err);
-      }
-    });
-    
-    // Start scanning button
-    startButton.addEventListener('click', async () => {
-      if (isScanning) return;
+    // Initialize scanner automatically
+    async function initScanner() {
+      loadingElement.style.display = 'block';
+      errorElement.style.display = 'none';
+      retryButton.style.display = 'none';
+      qrReaderElement.style.display = 'none';
       
       try {
+        html5QrCode = new Html5Qrcode("qr-reader");
         const cameras = await Html5Qrcode.getCameras();
+        
         if (cameras.length === 0) {
-          alert("No cameras found");
-          return;
+          throw new Error("No cameras found");
         }
         
-        startButton.style.display = 'none';
+        loadingElement.style.display = 'none';
         qrReaderElement.style.display = 'block';
         isScanning = true;
         
         await html5QrCode.start(
-          cameras[0].id,  // Use first camera (usually back)
+          cameras[0].id,  // Use first camera
           {
             fps: 10,
             qrbox: { width: 250, height: 250 }
@@ -147,14 +156,25 @@
           async (decodedText) => {
             await handleScan(decodedText);
           },
-          () => {} // Verbose logging (optional)
+          (errorMessage) => {
+            // Optional verbose logging
+          }
         );
       } catch (err) {
         console.error(err);
-        resetScanner();
-        alert("Failed to start scanner");
+        loadingElement.style.display = 'none';
+        errorElement.style.display = 'block';
+        errorElement.textContent = err.message;
+        retryButton.style.display = 'block';
+        qrReaderElement.style.display = 'none';
       }
-    });
+    }
+    
+    // Retry button handler
+    retryButton.addEventListener('click', initScanner);
+    
+    // Start scanner on page load
+    document.addEventListener('DOMContentLoaded', initScanner);
     
     async function handleScan(ticketId) {
       // Freeze scanner
@@ -192,10 +212,10 @@
         showResult("⚠", "Network Error", "declined");
       }
       
-      // Auto-close after delay
+      // Auto-resume scanning after delay
       setTimeout(() => {
         resultOverlay.style.display = 'none';
-        resetScanner();
+        initScanner(); // Restart scanner automatically
       }, 2000);
     }
     
@@ -204,11 +224,6 @@
       statusMessage.textContent = message;
       statusIcon.className = `status-icon ${className}`;
       resultOverlay.style.display = 'flex';
-    }
-    
-    function resetScanner() {
-      startButton.style.display = 'block';
-      isScanning = false;
     }
   </script>
 </body>
